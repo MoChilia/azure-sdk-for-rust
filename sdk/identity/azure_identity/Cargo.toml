@@ -22,9 +22,13 @@ openssl = { workspace = true, optional = true }
 pin-project.workspace = true
 serde.workspace = true
 time.workspace = true
+tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 typespec_client_core = { workspace = true, features = ["derive"] }
 url.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-process = "2.3.0"
 
 [dev-dependencies]
 azure_core_test.workspace = true

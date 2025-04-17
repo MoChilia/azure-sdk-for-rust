@@ -19,7 +19,6 @@ use std::sync::Arc;
 use url::form_urlencoded;
 
 /// Exchange a refresh token for a new access token and refresh token.
-#[allow(dead_code)]
 pub async fn exchange(
     http_client: Arc<dyn HttpClient>,
     tenant_id: &str,

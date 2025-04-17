@@ -27,6 +27,7 @@ pub fn authorize(
     tenant_id: &str,
     redirect_url: Url,
     scopes: &[&str],
+    prompt: Option<&str>,
 ) -> AuthorizationCodeFlow {
     let auth_url = oauth2::AuthUrl::from_url(
         Url::parse(&format!(
@@ -61,11 +62,16 @@ pub fn authorize(
     let scopes = scopes.iter().map(ToString::to_string).map(Scope::new);
 
     // Generate the authorization URL to which we'll redirect the user.
-    let (authorize_url, csrf_state) = client
+    let mut auth_url_builder = client
         .authorize_url(oauth2::CsrfToken::new_random)
         .add_scopes(scopes)
-        .set_pkce_challenge(pkce_code_challenge)
-        .url();
+        .set_pkce_challenge(pkce_code_challenge);
+
+    if let Some(prompt_value) = prompt {
+        auth_url_builder = auth_url_builder.add_extra_param("prompt", prompt_value);
+    }
+
+    let (authorize_url, csrf_state) = auth_url_builder.url();
 
     AuthorizationCodeFlow {
         client,

@@ -11,9 +11,10 @@ mod client_secret_credential;
 mod credentials;
 mod env;
 mod federated_credentials_flow;
+pub mod interactive_credential;
 mod managed_identity_credential;
 mod oauth2_http_client;
-mod refresh_token;
+pub mod refresh_token;
 mod timeout;
 
 use azure_core::{error::ErrorKind, Error, Result};
