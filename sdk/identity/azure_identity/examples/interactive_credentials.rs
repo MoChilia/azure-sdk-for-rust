@@ -1,6 +1,11 @@
-use azure_core::{credentials::Secret, http::new_http_client};
+use azure_core::{
+    credentials::{Secret, TokenCredential},
+    http::new_http_client,
+};
 use azure_identity::{
-    interactive_credential::interactive_browser_credential::InteractiveBrowserCredential,
+    interactive_credential::interactive_browser_credential::{
+        InteractiveBrowserCredential, InteractiveBrowserCredentialOptions,
+    },
     refresh_token,
 };
 use oauth2::{ClientId, TokenResponse};
@@ -18,13 +23,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn run_app_inter(subscription_id: String, tenant_id: String) -> Result<(), Box<dyn Error>> {
-    // Create InteractiveBrowserCredential
-    let interactive_credentials =
-        InteractiveBrowserCredential::new(None, Some(tenant_id.clone()), None)?;
+    // Create InteractiveBrowserCredential with the new constructor
+    let options = InteractiveBrowserCredentialOptions {
+        tenant_id: Some(tenant_id.clone()),
+        ..Default::default()
+    };
 
-    // Initial token request
+    let interactive_credentials = InteractiveBrowserCredential::new(Some(options))?;
+
+    // Correct the token request to use a slice of string slices
     let token_response = interactive_credentials
-        .get_token(Some(&["https://management.core.windows.net/.default"]))
+        .get_token(&["https://management.core.windows.net/.default"])
         .await?;
 
     let access_token_secret = token_response.access_token().secret();
