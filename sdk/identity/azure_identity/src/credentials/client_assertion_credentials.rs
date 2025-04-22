@@ -9,9 +9,6 @@ use azure_core::{
 use std::{fmt::Debug, str, sync::Arc, time::Duration};
 use time::OffsetDateTime;
 
-const AZURE_TENANT_ID_ENV_KEY: &str = "AZURE_TENANT_ID";
-const AZURE_CLIENT_ID_ENV_KEY: &str = "AZURE_CLIENT_ID";
-
 /// Enables authentication of a Microsoft Entra service principal using a signed client assertion.
 #[derive(Debug)]
 pub struct ClientAssertionCredential<C> {
@@ -80,53 +77,6 @@ impl<C: ClientAssertion> ClientAssertionCredential<C> {
         })
     }
 
-    /// Create a new `ClientAssertionCredential` from environment variables.
-    ///
-    /// # Variables
-    ///
-    /// * `AZURE_TENANT_ID`
-    /// * `AZURE_CLIENT_ID`
-    pub fn from_env(
-        assertion: C,
-        options: Option<ClientAssertionCredentialOptions>,
-    ) -> azure_core::Result<Arc<Self>> {
-        Ok(Arc::new(Self::from_env_exclusive(assertion, options)?))
-    }
-
-    /// Create a new `ClientAssertionCredential` from environment variables,
-    /// without wrapping it in an `Arc`. Intended for use by other credentials
-    /// in the crate that will themselves be protected by an `Arc`.
-    ///
-    /// # Variables
-    ///
-    /// * `AZURE_TENANT_ID`
-    /// * `AZURE_CLIENT_ID`
-    pub(crate) fn from_env_exclusive(
-        assertion: C,
-        options: Option<ClientAssertionCredentialOptions>,
-    ) -> azure_core::Result<Self> {
-        let options = options.unwrap_or_default();
-        let env = options.credential_options.env();
-        let tenant_id =
-            env.var(AZURE_TENANT_ID_ENV_KEY)
-                .with_context(ErrorKind::Credential, || {
-                    format!(
-                        "working identity credential requires {} environment variable",
-                        AZURE_TENANT_ID_ENV_KEY
-                    )
-                })?;
-        let client_id =
-            env.var(AZURE_CLIENT_ID_ENV_KEY)
-                .with_context(ErrorKind::Credential, || {
-                    format!(
-                        "working identity credential requires {} environment variable",
-                        AZURE_CLIENT_ID_ENV_KEY
-                    )
-                })?;
-
-        ClientAssertionCredential::new_exclusive(tenant_id, client_id, assertion, Some(options))
-    }
-
     async fn get_token(&self, scopes: &[&str]) -> azure_core::Result<AccessToken> {
         let token = self.assertion.secret().await?;
         let credential_options = &self.options.credential_options;
@@ -155,5 +105,65 @@ impl<C: ClientAssertion> ClientAssertionCredential<C> {
 impl<C: ClientAssertion> TokenCredential for ClientAssertionCredential<C> {
     async fn get_token(&self, scopes: &[&str]) -> azure_core::Result<AccessToken> {
         self.cache.get_token(scopes, self.get_token(scopes)).await
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::tests::*;
+    use azure_core::{
+        authority_hosts::AZURE_PUBLIC_CLOUD,
+        http::{
+            headers::{self, content_type},
+            Body, Method, Request,
+        },
+    };
+    use url::form_urlencoded;
+
+    pub const FAKE_ASSERTION: &str = "fake assertion";
+
+    pub fn is_valid_request() -> impl Fn(&Request) -> azure_core::Result<()> {
+        let expected_url = format!(
+            "{}{}/oauth2/v2.0/token",
+            AZURE_PUBLIC_CLOUD.as_str(),
+            FAKE_TENANT_ID
+        );
+        move |req: &Request| {
+            assert_eq!(&Method::Post, req.method());
+            assert_eq!(expected_url, req.url().to_string());
+            assert_eq!(
+                content_type::APPLICATION_X_WWW_FORM_URLENCODED.as_str(),
+                req.headers().get_str(&headers::CONTENT_TYPE).unwrap()
+            );
+            let expected_params = [
+                ("client_assertion", FAKE_ASSERTION),
+                (
+                    "client_assertion_type",
+                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                ),
+                ("client_id", FAKE_CLIENT_ID),
+                ("grant_type", "client_credentials"),
+                ("scope", &LIVE_TEST_SCOPES.join(" ")),
+            ];
+            let body = match req.body() {
+                Body::Bytes(bytes) => str::from_utf8(bytes).unwrap(),
+                _ => panic!("unexpected body type"),
+            };
+            let actual_params: HashMap<String, String> = form_urlencoded::parse(body.as_bytes())
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            for (key, value) in expected_params.iter() {
+                assert_eq!(
+                    *value,
+                    actual_params
+                        .get(*key)
+                        .unwrap_or_else(|| panic!("no {} in request body", key))
+                );
+            }
+            Ok(())
+        }
     }
 }
